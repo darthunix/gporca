@@ -140,7 +140,22 @@ CLogicalSelect::Maxcard
 	if ((NULL != pexprScalar && (CUtils::FScalarConstFalse(pexprScalar) ||  CUtils::FScalarConstBoolNull(pexprScalar))) ||
 		CDrvdPropRelational::GetRelationalProperties(exprhdl.Pdp())->Ppc()->FContradiction())
 	{
-		return CMaxCard(0 /*ull*/);
+		// max cardinality should not be zero for a nullable column and a constant in a check constraint
+		CConstraint *cstr = CDrvdPropRelational::GetRelationalProperties(exprhdl.Pdp())->Ppc()->Pcnstr();
+		BOOL colCheck = cstr != NULL ? 
+			// constant check constraints are transformed to interval ones
+			cstr->Ect() == CConstraint::EctInterval 
+			// a check can be added only to a single column
+			&& cstr->PcrsUsed()->Size() == 1
+			// it is a table column (not computed etc.)
+			&& cstr->PcrsUsed()->PcrFirst()->Ecrt() == cstr->PcrsUsed()->PcrFirst()->EcrtTable
+			// column is nullable
+			&& !((CColRefTable *)cstr->PcrsUsed()->PcrFirst())->IsNullable()
+			// we don't want to mess with partition table internal checks
+			&& CDrvdPropRelational::GetRelationalProperties(exprhdl.Pdp())->Ppartinfo() == NULL
+			: true;
+		if (colCheck)
+			return CMaxCard(0 /*ull*/);
 	}
 
 	// pass on max card of first child
